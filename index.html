@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VISION TALK AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Poppins:wght@300;500&display=swap" rel="stylesheet">
+
+<style>
+body{
+    margin:0;
+    height:100vh;
+    background:linear-gradient(135deg,#b08d00,#fff7cc,#8a6f00);
+    font-family:'Poppins',sans-serif;
+    color:#2b2100;
+    text-align:center;
+}
+
+/* HEADER */
+.header{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:15px;
+    margin-top:35px;
+}
+
+.logo{
+    width:65px;
+    height:65px;
+}
+
+.title{
+    font-family:'Orbitron',sans-serif;
+    font-size:3em;
+    letter-spacing:3px;
+}
+
+/* STATUS TEXT */
+#status{
+    margin-top:15px;
+    font-size:1.2em;
+    animation:pulse 1.5s infinite;
+}
+
+@keyframes pulse{
+    0%{opacity:.4}
+    50%{opacity:1}
+    100%{opacity:.4}
+}
+
+/* MIC */
+.mic{
+    width:130px;
+    height:130px;
+    margin:35px auto;
+    border-radius:50%;
+    background:radial-gradient(circle,#ffffff,#ffe680);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:60px;
+    animation:glow 1.5s infinite;
+}
+
+@keyframes glow{
+    0%{box-shadow:0 0 10px #fff}
+    50%{box-shadow:0 0 35px #fff4b0}
+    100%{box-shadow:0 0 10px #fff}
+}
+
+/* BUTTONS */
+button{
+    padding:12px 25px;
+    margin:10px;
+    font-size:18px;
+    border:none;
+    border-radius:14px;
+    background:#3b2f00;
+    color:#fff;
+    cursor:pointer;
+    display:none;
+}
+
+#preview, video{
+    width:260px;
+    border-radius:16px;
+    margin-top:20px;
+    display:none;
+}
+
+/* TAP TO START */
+#unlock{
+    position:fixed;
+    inset:0;
+    z-index:9999;
+}
+</style>
+</head>
+
+<body>
+
+<!-- TAP ANYWHERE TO START (REQUIRED FOR MIC) -->
+<div id="unlock" onclick="unlockMic()"></div>
+
+<div class="header">
+    <img src="/static/akatsuki.jpeg" class="logo" alt="Logo">
+    <div class="title">VISION TALK AI</div>
+</div>
+
+<div id="status">Tap anywhere to activate voice assistant</div>
+
+<div class="mic">🎤</div>
+
+<button id="uploadBtn">Upload Image</button>
+<button id="cameraBtn">Camera</button>
+
+<input type="file" id="fileInput" accept="image/*" hidden>
+
+<video id="camera" autoplay></video>
+<button id="captureBtn">Capture</button>
+
+<img id="preview">
+
+<script>
+let recognition;
+let mode="welcome";
+let language="en";
+let stream=null;
+
+function speak(text){
+    const s=new SpeechSynthesisUtterance(text);
+    s.lang = language==="te"?"te-IN":language==="hi"?"hi-IN":"en-US";
+    speechSynthesis.speak(s);
+}
+
+function unlockMic(){
+    document.getElementById("unlock").style.display="none";
+    speak("Microphone activated. Say enter to start");
+    startRecognition();
+}
+
+function startRecognition(){
+    recognition=new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang="en-US";
+    recognition.continuous=true;
+
+    recognition.onresult=e=>{
+        const text=e.results[e.results.length-1][0].transcript.toLowerCase();
+        handleVoice(text);
+    };
+    recognition.start();
+}
+
+function handleVoice(text){
+
+    /* EXIT */
+    if(text.match(/exit|close|quit|stop/)){
+        speak("Do you want to exit? Say yes or no");
+        mode="exit";
+        return;
+    }
+
+    if(mode==="exit"){
+        if(text.includes("yes")){
+            speak("Thank you for using Vision Talk AI");
+            window.close();
+        }else{
+            mode="question";
+            speak("Continuing");
+        }
+        return;
+    }
+
+    /* ENTER */
+    if(mode==="welcome" && text.includes("enter")){
+        mode="language";
+        speak("Select language. Say English, Telugu or Hindi");
+        return;
+    }
+
+    /* LANGUAGE */
+    if(mode==="language"){
+        if(text.includes("english")) language="en";
+        else if(text.includes("telugu")) language="te";
+        else if(text.includes("hindi")) language="hi";
+        else return;
+
+        mode="image";
+        speak("Language selected. Upload image or use camera");
+
+        uploadBtn.style.display="inline-block";
+        cameraBtn.style.display="inline-block";
+        return;
+    }
+
+    /* IMAGE MODE */
+    if(mode==="image"){
+        if(text.includes("upload")) openUpload();
+        if(text.includes("camera")) openCamera();
+        return;
+    }
+
+    /* QUESTION */
+    if(mode==="question"){
+        fetch("/ask",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({question:text,language})
+        })
+        .then(r=>r.json())
+        .then(d=>speak(d.answer));
+    }
+}
+
+/* MANUAL BUTTONS */
+uploadBtn.onclick=openUpload;
+cameraBtn.onclick=openCamera;
+
+function openUpload(){
+    fileInput.click();
+}
+
+fileInput.onchange=function(){
+    uploadToServer(this.files[0]);
+};
+
+async function openCamera(){
+    camera.style.display="block";
+    captureBtn.style.display="inline-block";
+    stream = await navigator.mediaDevices.getUserMedia({video:true});
+    camera.srcObject = stream;
+}
+
+captureBtn.onclick=function(){
+    const canvas=document.createElement("canvas");
+    canvas.width=camera.videoWidth;
+    canvas.height=camera.videoHeight;
+    canvas.getContext("2d").drawImage(camera,0,0);
+
+    canvas.toBlob(blob=>{
+        uploadToServer(blob);
+        stream.getTracks().forEach(t=>t.stop());
+        camera.style.display="none";
+        captureBtn.style.display="none";
+    });
+};
+
+function uploadToServer(file){
+    preview.src=URL.createObjectURL(file);
+    preview.style.display="block";
+
+    const fd=new FormData();
+    fd.append("image",file);
+
+    fetch("/upload",{method:"POST",body:fd})
+    .then(()=>{
+        mode="question";
+        speak("Image uploaded. Ask your question");
+        uploadBtn.style.display="none";
+        cameraBtn.style.display="none";
+    });
+}
+
+window.onload=()=>{
+    speak("Tap anywhere to activate microphone");
+};
+</script>
+
+</body>
+</html>
